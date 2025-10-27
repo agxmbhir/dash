@@ -1,0 +1,30 @@
+[package]
+name = "dash-indexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+bs58 = "0.5"
+dotenvy = "0.15"
+futures = "0.3"
+log = "0.4"
+env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+# enable chrono types
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
+deadpool-postgres = "0.14"
+yellowstone-grpc-client = "6.0"
+yellowstone-grpc-proto = "6.0"
+tonic = { version = "0.12", features = ["zstd", "gzip", "tls", "tls-roots"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+chrono = { version = "0.4", features = ["clock"] }
+tokio-postgres-rustls = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+rustls-native-certs = "0.8"
+
+[profile.release]
+lto = true
+codegen-units = 1
