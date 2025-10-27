@@ -52,6 +52,20 @@ pub async fn ensure_schema(pool: &DbPool) -> Result<()> {
                fee_payer TEXT NOT NULL,
                block_time TIMESTAMPTZ NULL,
                ingest_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
+             );
+             ALTER TABLE IF EXISTS burns ADD COLUMN IF NOT EXISTS compute_units BIGINT;
+             ALTER TABLE IF EXISTS burns ADD COLUMN IF NOT EXISTS arbitrage_success BOOLEAN;
+             CREATE TABLE IF NOT EXISTS tx_failures (
+               signature TEXT PRIMARY KEY,
+               error_type TEXT NOT NULL,
+               slot BIGINT NOT NULL,
+               ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
+             );
+             CREATE TABLE IF NOT EXISTS tx_instructions (
+               signature TEXT NOT NULL,
+               program_id TEXT NOT NULL,
+               num_instructions INT NOT NULL,
+               PRIMARY KEY(signature, program_id)
              );",
         )
         .await?;
@@ -66,25 +80,87 @@ pub async fn upsert_burn(
     fee_lamports: i64,
     fee_payer: &str,
     block_time: Option<chrono::DateTime<chrono::Utc>>,
+    compute_units: Option<i64>,
+    arbitrage_success: Option<bool>,
 ) -> Result<()> {
     let client = pool.get().await?;
     let stmt = client
         .prepare(
-            "INSERT INTO burns(signature, slot, success, fee_lamports, fee_payer, block_time)
-             VALUES ($1,$2,$3,$4,$5,$6)
+            "INSERT INTO burns(signature, slot, success, fee_lamports, fee_payer, block_time, compute_units, arbitrage_success)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
              ON CONFLICT (signature) DO UPDATE SET
                slot = EXCLUDED.slot,
                success = EXCLUDED.success,
                fee_lamports = EXCLUDED.fee_lamports,
                fee_payer = EXCLUDED.fee_payer,
-               block_time = COALESCE(EXCLUDED.block_time, burns.block_time)",
+               block_time = COALESCE(EXCLUDED.block_time, burns.block_time),
+               compute_units = COALESCE(EXCLUDED.compute_units, burns.compute_units),
+               arbitrage_success = COALESCE(EXCLUDED.arbitrage_success, burns.arbitrage_success)",
         )
         .await?;
     client
         .execute(
             &stmt,
-            &[&signature, &slot, &success, &fee_lamports, &fee_payer, &block_time],
+            &[
+                &signature,
+                &slot,
+                &success,
+                &fee_lamports,
+                &fee_payer,
+                &block_time,
+                &compute_units,
+                &arbitrage_success,
+            ],
         )
         .await?;
+    Ok(())
+}
+
+pub async fn upsert_tx_failure(
+    pool: &DbPool,
+    signature: &str,
+    error_type: &str,
+    slot: i64,
+    ts: Option<chrono::DateTime<chrono::Utc>>,
+) -> Result<()> {
+    let client = pool.get().await?;
+    let stmt = client
+        .prepare(
+            "INSERT INTO tx_failures(signature, error_type, slot, ts)
+             VALUES ($1,$2,$3,COALESCE($4, NOW()))
+             ON CONFLICT (signature) DO UPDATE SET
+               error_type = EXCLUDED.error_type,
+               slot = EXCLUDED.slot,
+               ts = EXCLUDED.ts",
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&signature, &error_type, &slot, &ts])
+        .await?;
+    Ok(())
+}
+
+pub async fn upsert_tx_instructions(
+    pool: &DbPool,
+    signature: &str,
+    program_counts: &[(String, i32)],
+) -> Result<()> {
+    if program_counts.is_empty() {
+        return Ok(());
+    }
+    let client = pool.get().await?;
+    let stmt = client
+        .prepare(
+            "INSERT INTO tx_instructions(signature, program_id, num_instructions)
+             VALUES ($1,$2,$3)
+             ON CONFLICT (signature, program_id) DO UPDATE SET
+               num_instructions = EXCLUDED.num_instructions",
+        )
+        .await?;
+    for (program_id, count) in program_counts.iter() {
+        client
+            .execute(&stmt, &[&signature, program_id, count])
+            .await?;
+    }
     Ok(())
 }
