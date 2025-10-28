@@ -1,4 +1,4 @@
-## dash-indexer (Part 1 - Ingest)
+## dash-indexer
 
 Ingest Solana Yellowstone gRPC transaction updates for the competitor bot program and store burn (fee) data in Postgres.
 
