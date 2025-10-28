@@ -174,7 +174,7 @@ async fn handle_tx(cfg: &Config, pool: &DbPool, tx_update: &SubscribeUpdateTrans
             }
         }
     }
-    // Parse logs when available to detect MEV bot outcomes
+
     if let Some(meta) = &wrapped.meta {
         // Explicit negative signal from bot
         let mut saw_negative = false;
@@ -229,6 +229,7 @@ async fn handle_tx(cfg: &Config, pool: &DbPool, tx_update: &SubscribeUpdateTrans
         arbitrage_success,
     )
     .await?;
+
     // Write failure cause when present
     if !success {
         if let Some(err_ty) = error_type.as_deref() {

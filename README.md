@@ -4,7 +4,7 @@ Ingest Solana Yellowstone gRPC transaction updates for the competitor bot progra
 
 ### Run locally
 
-1. Setup the .env, looks src/config.rs for the fields.
+1. Setup the .env, see src/config.rs for required fields.
 2. Ensure Postgres is running and reachable by `DATABASE_URL`.
 3. Build and run:
 
@@ -20,6 +20,8 @@ The service will:
 - record compute units consumed and failure causes
 - aggregate instruction program IDs per transaction
 
+
+
 ### Environment
 
 Set these variables in `.env`:
@@ -33,6 +35,8 @@ DATABASE_URL=postgres://user:pass@host/db
 COMMITMENT=confirmed
 
 
+```
+
 ### Schema
 
 ```
@@ -45,6 +49,7 @@ CREATE TABLE IF NOT EXISTS burns (
   block_time TIMESTAMPTZ NULL,
   arbitrage_success BOOLEAN,
   compute_units BIGINT,
+  lamports_per_cu DOUBLE PRECISION,
   ingest_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -61,12 +66,14 @@ CREATE TABLE IF NOT EXISTS tx_instructions (
   num_instructions INT NOT NULL,
   PRIMARY KEY(signature, program_id)
 );
+
+
 ```
 
 ### Notes
 - Backfilling was a big bottleneck and a shortcut taken. There is currently no backfilling logic, I attempted to use https://docs.triton.one/project-yellowstone/fumarole and just plain rpc requests per block and then filtering for the program and some other ways. None were reliable enough and could go far back. In production i would push for access to https://docs.triton.one/project-yellowstone/fumarole, didn't know if this was enabled in the current endpoint. Would have done this if i had more time. 
 - I found there to be an infinite amounts of metrics to be tracked. Example things like tracking validator-level latency, priority-fee density per block, pool-specific arbitrage profitability, or even live mempool competition stats felt like overkill for this scope. They also required a richer access to the internal data. For example, tracking the error codes, it'd have been great to have access to what these internal errors map to eg: custom program error: 0x1. Given the scope i decided to keep some essential metrics that i deep useful for a competitor to track. 
-- one limitation for the takehome because we don't have a backfill is that we cannot see much metric on the successful trades. For example, tracking the pools called by the bot program. since there are so few successful arbitrages, unless the ingestor is run for longer we wouldn't find any data on the pools used. So the "Activity" row in the dashboard will have very little data/no data. 
+- one limitation for the takehome because we don't have a backfill is that we cannot see much metric on the successful arbitrages. For example, tracking the pools called by the bot program if a successful arbitrage was found. since there are so few successful arbitrages, unless the ingestor is run for longer we wouldn't find any data on the pools used. So the "Activity" row in the dashboard will have very little data/no data. 
 
 
 
@@ -74,4 +81,29 @@ CREATE TABLE IF NOT EXISTS tx_instructions (
 
 
 
-# dash
+
+
+## dash (Part 2 - Visualize)
+
+Grafana connects directly to the NeonDB/Postgres instance to visualize live ingestion metrics from `dash-indexer`. It provides a top-level view into cost efficiency, reliability, and arbitrage performance.
+
+### Dashboard Architecture
+
+- 1. Data Source: NeonDB / Postgres connected directly in Grafana Cloud.
+
+- 2. Core Panels:
+  - Cost Efficiency:
+    - Lifetime Burn (SOL): total SOL spent by the bot
+    - Lamports per CU (p50 / p90)
+    - Average Burn (Hourly): fee paid vs fee lost on failed transactions
+    - Avg Lamports/CU (Lifetime)
+    - Top Burners: top fee payers by total SOL burnt
+  - Reliability:
+    - Top Failure Types (Pie / Bar)
+    - Transactions per Hour
+    - Failure Rate (Hourly)
+  - Activity & Opportunities:
+    - Arbitrage Success (Hourly)
+    - Opportunity Window Heatmap: hour-of-day vs success rate
+    - Program Hotspots: external programs most used in successful arbitrages
+    - Slot Activity Table: recent slot-level counts and burn SOL
