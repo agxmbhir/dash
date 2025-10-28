@@ -18,6 +18,7 @@ The service will:
 - fetch block time via JSON-RPC
 - upsert into `burns` table
 - record compute units consumed and failure causes
+- derive an `arbitrage_success` label from logs and swap activity
 - aggregate instruction program IDs per transaction
 
 
@@ -49,7 +50,6 @@ CREATE TABLE IF NOT EXISTS burns (
   block_time TIMESTAMPTZ NULL,
   arbitrage_success BOOLEAN,
   compute_units BIGINT,
-  lamports_per_cu DOUBLE PRECISION,
   ingest_ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -70,28 +70,30 @@ CREATE TABLE IF NOT EXISTS tx_instructions (
 
 ```
 
+### Part 3 - Expand (Additions and rationale)
+
+- **Compute units (CU)**: Captured per transaction to normalize burn across changing fee markets. Enables derived metrics like lamports-per-CU for cost efficiency.
+- **Arbitrage success label**: Heuristic boolean inferred from program logs and presence of swap-related instructions. Separates "scans" from executed arbitrage, powering opportunity rate and venue analysis. Caveat: heuristic, not ground truth.
+- **Failure taxonomy** (`tx_failures`): Stores first-order error type for each failed tx to track top regressions and reliability drift.
+- **Program hotspots** (`tx_instructions`): Aggregates instruction counts by external program per transaction (filters common noise like System/ComputeBudget/Token/Memo/bot itself). Surfaces venue mix and routing patterns.
+- **Block time**: Stored to support time-series queries without costly joins.
+
+Notes on design:
+- We intentionally keep the schema lean and compute ratios (e.g., lamports-per-CU) in queries instead of storing them as columns.
+- Noise program filtering focuses analytics on actionable venues without drowning in boilerplate instructions.
+
 ### Notes
 - Backfilling was a big bottleneck and a shortcut taken. There is currently no backfilling logic, I attempted to use https://docs.triton.one/project-yellowstone/fumarole and just plain rpc requests per block and then filtering for the program and some other ways. None were reliable enough and could go far back. In production i would push for access to https://docs.triton.one/project-yellowstone/fumarole, didn't know if this was enabled in the current endpoint. Would have done this if i had more time. 
 - I found there to be an infinite amounts of metrics to be tracked. Example things like tracking validator-level latency, priority-fee density per block, pool-specific arbitrage profitability, or even live mempool competition stats felt like overkill for this scope. They also required a richer access to the internal data. For example, tracking the error codes, it'd have been great to have access to what these internal errors map to eg: custom program error: 0x1. Given the scope i decided to keep some essential metrics that i deep useful for a competitor to track. 
 - one limitation for the takehome because we don't have a backfill is that we cannot see much metric on the successful arbitrages. For example, tracking the pools called by the bot program if a successful arbitrage was found. since there are so few successful arbitrages, unless the ingestor is run for longer we wouldn't find any data on the pools used. So the "Activity" row in the dashboard will have very little data/no data. 
 
 
-
-
-
-
-
-
-
-## dash (Part 2 - Visualize)
-
-Grafana connects directly to the NeonDB/Postgres instance to visualize live ingestion metrics from `dash-indexer`. It provides a top-level view into cost efficiency, reliability, and arbitrage performance.
-
 ### Dashboard Architecture
 
-- 1. Data Source: NeonDB / Postgres connected directly in Grafana Cloud.
+- 1. Data Source: NeonDB connected directly in Grafana Cloud.
 
-- 2. Core Panels:
+- 2.  Panels:
+  - Derived values like Lamports/CU are computed in queries as `fee_lamports / NULLIF(compute_units,0)`; they are not stored as columns.
   - Cost Efficiency:
     - Lifetime Burn (SOL): total SOL spent by the bot
     - Lamports per CU (p50 / p90)
@@ -104,6 +106,4 @@ Grafana connects directly to the NeonDB/Postgres instance to visualize live inge
     - Failure Rate (Hourly)
   - Activity & Opportunities:
     - Arbitrage Success (Hourly)
-    - Opportunity Window Heatmap: hour-of-day vs success rate
     - Program Hotspots: external programs most used in successful arbitrages
-    - Slot Activity Table: recent slot-level counts and burn SOL

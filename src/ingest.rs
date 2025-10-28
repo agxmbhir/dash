@@ -157,8 +157,10 @@ async fn handle_tx(cfg: &Config, pool: &DbPool, tx_update: &SubscribeUpdateTrans
     }
     // Aggregate instruction program IDs used
     let mut program_counts: HashMap<String, i32> = HashMap::new();
+
     // Determine arbitrage success based on bot logs
     let mut arbitrage_success: Option<bool> = None;
+    if success {
     if let Some(tx) = &wrapped.transaction {
         if let Some(msg) = &tx.message {
             let account_keys = &msg.account_keys;
@@ -200,8 +202,10 @@ async fn handle_tx(cfg: &Config, pool: &DbPool, tx_update: &SubscribeUpdateTrans
             if saw_pool_activity {
                 arbitrage_success = Some(true);
             }
+            }
         }
     }
+    
     let block_time = fetch_block_time(&cfg.json_rpc_url, slot).await.ok();
     info!(
         "\n==================== Incoming Transaction ====================\nsignature        : {}\nslot             : {}\nsuccess          : {}\nfee_lamports     : {}\ncompute_units    : {}\nerror_type       : {}\nfee_payer        : {}\nblock_time       : {}\narbitrage_success: {}\n==============================================================\n",
