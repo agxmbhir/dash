@@ -1,4 +1,4 @@
-## dash-indexer (Part 1 - Ingest)
+## dash-indexer
 
 Ingest Solana Yellowstone gRPC transaction updates for the competitor bot program and store burn (fee) data in Postgres.
 
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS tx_instructions (
 
 
 
-## dash (Part 2 - Visualize)
+## dash
 
 Grafana connects directly to the NeonDB/Postgres instance to visualize live ingestion metrics from `dash-indexer`. It provides a top-level view into cost efficiency, reliability, and arbitrage performance.
 
